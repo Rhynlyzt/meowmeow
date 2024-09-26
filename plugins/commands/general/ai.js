@@ -5,7 +5,7 @@ const config = {
     aliases: [],
     description: "GPT architecture",
     usage: '[prompt]',
-    credits: "IShowSpeed"
+    credits: "IShowSpeed",
 };
 
 const langData = {
