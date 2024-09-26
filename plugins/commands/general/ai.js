@@ -2,50 +2,70 @@ import axios from 'axios';
 
 const config = {
     name: "ai",
-    aliases: ["chatgpt"],
-    description: "Gpt architecture",
+    aliases: ["gpt"],
+    description: "AI to answer any question",
     usage: "[query]",
     cooldown: 3,
-    permissions: [0],
+    permissions: [0, 1, 2],
     isAbsolute: false,
     isHidden: false,
-    credits: "ai, api by jerome",
+    credits: "cttro",
 };
 
 const previousResponses = new Map();
 
-async function onCall({ api, event, args }) {
-    const { messageID, messageReply, threadID, senderID } = event;
-    let prompt = args.join(" ");
-
-    if (messageReply) {
-        const repliedMessage = messageReply.body;
-        prompt = `${repliedMessage} ${prompt}`;
+async function onCall({ message, args }) {
+    const id = message.senderID;
+    if (!args.length) {
+        return message.reply("Please provide a question to get an answer.");
     }
 
-    if (!prompt) {
-        return api.sendMessage('𝗣𝗹𝗲𝗮𝘀𝗲 𝗽𝗿𝗼𝘃𝗶𝗱𝗲 𝗮 𝗽𝗿𝗼𝗺𝗽𝘁 𝘁𝗼 𝗴𝗲𝗻𝗲𝗿𝗮𝘁𝗲 𝗮 𝘁𝗲𝘅𝘁 𝗿𝗲𝘀𝗽𝗼𝗻𝘀𝗲.\n𝗘𝘅𝗮𝗺𝗽𝗹𝗲: 𝗮𝗶 𝘄𝗵𝗮𝘁 𝗶𝘀 𝘄𝗮𝘃𝗲?', threadID, messageID);
+    const question = args.join(" ").trim();
+    const previousResponse = previousResponses.get(id);
+
+    if (previousResponse) {
+        question = `Follow-up on: "${previousResponse}"\nUser reply: "${question}"`;
     }
-
-    api.sendMessage('🕧|𝗦𝗲𝗮𝗿𝗰𝗵𝗶𝗻𝗴 𝗳𝗼𝗿 𝗮𝗻 𝗮𝗻𝘀𝘄𝗲𝗿 𝘆𝗼𝘂𝗿 𝗾𝘂𝗲𝘀𝘁𝗶𝗼𝗻 𝗽𝗹𝗲𝗮𝘀𝗲 𝘄𝗮𝗶𝘁...', threadID);
-
-    // Delay
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Adjust the delay time as needed
 
     try {
-        const gpt4_api = `https://gpt4withcustommodel.onrender.com/gpt?query=${encodeURIComponent(prompt)}&model=gpt-4-32k`;
-        const response = await axios.get(gpt4_api);
+        const typ = global.api.sendTypingIndicator(message.threadID);
+        const response = await getAIResponse(question);
+        typ();
 
-        if (response.data && response.data.response) {
-            const generatedText = response.data.response;
-            api.sendMessage(`𝗚𝗣𝗧4 𝗔𝗦𝗦𝗜𝗦𝗧𝗔𝗡𝗧\n━━━━━━━━━━━━━━━━━━\n${generatedText}\n━━━━━━━━━━━━━━━━━━`, threadID, messageID);
+        await message.send(`[ 𝗖𝗢𝗡𝗧𝗜𝗡𝗨𝗘𝗦 𝗔𝗜 ]\n━━━━━━━━━━━━━━━━━━\n${response}\n━━━━━━━━━━━━━━━━━━`);
+        previousResponses.set(id, response);
+    } catch (error) {
+        console.error("Error in onCall:", error.message);
+        await message.send("An error occurred while processing your request.");
+    }
+}
+
+async function getAIResponse(question) {
+    const services = [
+        { url: 'https://markdevs-last-api.onrender.com/gpt4', params: { prompt: question, uid: 'your-uid-here' } },
+        { url: 'http://markdevs-last-api.onrender.com/api/v2/gpt4', params: { query: question } },
+        { url: 'https://markdevs-last-api.onrender.com/api/v3/gpt4', params: { ask: question } }
+    ];
+
+    for (const service of services) {
+        const data = await fetchFromAI(service.url, service.params);
+        if (data) return data;
+    }
+
+    throw new Error("No valid response from any AI service");
+}
+
+async function fetchFromAI(url, params) {
+    try {
+        const { data } = await axios.get(url, { params });
+        if (data && (data.gpt4 || data.reply || data.response || data.answer || data.message)) {
+            return data.gpt4 || data.reply || data.response || data.answer || data.message;
         } else {
-            console.error('API response did not contain expected data:', response.data);
-            api.sendMessage(`❌ An error occurred while generating the text response. Please try again later. Response data: ${JSON.stringify(response.data)}`, threadID, messageID);
+            throw new Error("No valid response from AI");
         }
     } catch (error) {
-        console.error('Error:', error);
-        api.sendMessage(`❌ An error occurred while generating the text response. Please try again later. Error details: ${error.message}`, threadID, messageID);
+        console.error("Network Error:", error.message);
+        return null;
     }
 }
 
